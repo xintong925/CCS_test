@@ -88,15 +88,16 @@ int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
 int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len);
 int32_t platform_read_multiple(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
 
-uint32_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len);
-int32_t Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len);
-int32_t Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len);
+int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len);
+uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len);
+uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len);
 
 void Tap_Detection(void *handle, uint16_t reg, uint16_t len);
 int Activity_Detection(void *handle, uint16_t reg, uint16_t len);
 void wakeUpCallback(void);
 uint16_t concatenateHexNumbers(uint16_t num1, uint16_t num2);
-
+uint16_t keepLast16Bits(uint32_t intValue);
+int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
 
 #define THREADSTACKSIZE (1024)
 
@@ -107,9 +108,17 @@ uint16_t concatenateHexNumbers(uint16_t num1, uint16_t num2);
 #define SEND_DEBUG_INFO (0)
 #define SEND_DATA (1)
 
-static uint32_t raw_temp;
-static uint32_t raw_accel[3];
-static uint32_t raw_angular[3];
+static int16_t raw_temp; // need to set to be int16_t, otherwise does not make sense
+static int16_t raw_accel[3];
+static int8_t accel_8bit[6];
+static int16_t raw_angular[3];
+static int8_t angular_8bit[6];
+static uint8_t XL_X_sent[2];
+static uint8_t XL_Y_sent[2];
+static uint8_t G_sent[6];
+static uint8_t data_sent[12];
+
+static uint8_t XL_Z_sent[2];
 static float accel_g[3];
 static float angular_mdps[3];
 
@@ -278,7 +287,7 @@ int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
     }
 
     ret = *bufp;
-    printf("Received: 0x%04X\n", ret);
+ //   printf("Received: 0x%04X\n", ret);
 
     return ret;
 }
@@ -334,8 +343,8 @@ int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
   * @retval             interface status (MANDATORY: return 0 -> no Error)
   *
   */
-/*
-uint32_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
+
+int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     int32_t ret;
     int32_t retL;
@@ -375,11 +384,10 @@ uint32_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
     return raw_temp;
 }
 
-*/
 
-int32_t Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
+uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
-    int32_t ret;
+    int16_t ret;
 
     uint16_t data_XL;
     uint16_t data_XH;
@@ -399,7 +407,7 @@ int32_t Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     bool check_XL_aval = ((ret&XL_bit) == XL_bit); // if true, the temp data is ready
 
-    printf("Accelerometer data ready? %d\n", check_XL_aval);
+  //  printf("Accelerometer data ready? %d\n", check_XL_aval);
 
     if(check_XL_aval) {
 
@@ -410,29 +418,48 @@ int32_t Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
         data_ZL = platform_read(masterSpi, LSM6DSOX_OUTZ_L_A, XL_buff_Z, 1);
         data_ZH = platform_read(masterSpi, LSM6DSOX_OUTZ_H_A, XL_buff_Z, 1);
 
+        accel_8bit[0] = (uint8_t)data_XH;
+        accel_8bit[1] = (uint8_t)data_XL;
+        accel_8bit[2] = (uint8_t)data_YH;
+        accel_8bit[3] = (uint8_t)data_YL;
+        accel_8bit[4] = (uint8_t)data_ZH;
+        accel_8bit[5] = (uint8_t)data_ZL;
+
+
         data_XH <<= 8;
         data_YH <<= 8;
         data_ZH <<= 8;
+
+    //    printf("data XH: 0x%04X\n", data_XL);
+    //    printf("data XL: 0x%04X\n", data_XH);
 
         raw_accel[0] = data_XL | data_XH;
         raw_accel[1] = data_YL | data_YH;
         raw_accel[2] = data_ZL | data_ZH;
 
+    //    printf("data X: 0x%04X\n", raw_accel[0]);
+
         accel_g[0] = ((float_t)raw_accel[0]) * 0.061f/1000; // Refer Adafruit_LSM6DS.cpp
         accel_g[1] = ((float_t)raw_accel[1]) * 0.061f/1000;
         accel_g[2] = ((float_t)raw_accel[2]) * 0.061f/1000;
 
-        printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
+
+
+    //    uint32_t raw_accel_x = keepLast16Bits(raw_accel[0]);
+    //    raw_accel[0] = raw_accel_x;
+
+
+   //     printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
 
 
    }
-    return raw_accel;
+    return accel_8bit;
 }
 
 
-int32_t Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
+uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
-    int32_t ret;
+    int16_t ret;
 
     uint16_t data_XL;
     uint16_t data_XH;
@@ -451,7 +478,7 @@ int32_t Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     bool check_G_aval = ((ret&G_bit) == G_bit); // if true, the data is ready
 
-    printf("Gyro data ready? %d\n", check_G_aval);
+  //  printf("Gyro data ready? %d\n", check_G_aval);
 
     if(check_G_aval) {
 
@@ -461,6 +488,13 @@ int32_t Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         data_YH = platform_read(masterSpi, LSM6DSOX_OUTY_H_G, G_buff, 1);
         data_ZL = platform_read(masterSpi, LSM6DSOX_OUTZ_L_G, G_buff, 1);
         data_ZH = platform_read(masterSpi, LSM6DSOX_OUTZ_H_G, G_buff, 1);
+
+        angular_8bit[0] = (uint8_t)data_XH;
+        angular_8bit[1] = (uint8_t)data_XL;
+        angular_8bit[2] = (uint8_t)data_YH;
+        angular_8bit[3] = (uint8_t)data_YL;
+        angular_8bit[4] = (uint8_t)data_ZH;
+        angular_8bit[5] = (uint8_t)data_ZL;
 
         data_XH <<= 8;
         data_YH <<= 8;
@@ -474,10 +508,14 @@ int32_t Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         angular_mdps[1] = ((float_t)raw_angular[1]) * 35.0f/1000;
         angular_mdps[2] = ((float_t)raw_angular[2]) * 35.0f/1000;
 
-        printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
+   //     printf("raw_angular x: 0x%02X\n", raw_angular[0]);
+   //     printf("raw_angular y: 0x%02X\n", raw_angular[1]);
+   //     printf("raw_angular z: 0x%02X\n", raw_angular[2]);
+
+  //      printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
 
    }
-    return raw_angular;
+    return angular_8bit;
 }
 
 
@@ -522,14 +560,14 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
     bool check_activity = ((ret&activity_bit) == activity_bit); // if true, there's change in activity status
 
     if(check_activity) {
-        printf("zzzzzzzzzzzzzzzzzzzzzzz Sleeping zzzzzzzzzzzzzzzzzzzzzzzzzz\n");
+        printf("zzzzzzzzzZZZZZZZZZZZZZZZZZ\n");
         data_status = 0;
     }
     else{
-        printf("!!!!!!!!!!!!!!!!!!!! Active !!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+     //   printf("!!!!!!!!!!!!!!!!!!!!!Guten Tag!!!!!!!!!!!!!!!!!!!!\n");
         data_status = 1;
     }
-    printf("status is %d\n", data_status);
+  //  printf("status is %d\n", data_status);
 
     return data_status;
 
@@ -564,7 +602,7 @@ int init_SPI_IMU(void) {
        /* Initialize SPI parameters */
 
     SPI_Params_init(&spiParams);            //spiParams is a global (TODO change eventually)
-    spiParams.frameFormat = SPI_POL1_PHA1; // Mode 3
+    spiParams.frameFormat = SPI_POL0_PHA0; // Mode 3
     spiParams.bitRate = 1000000;
     //spiParams.mode = SPI_MASTER;
     spiParams.dataSize = 16;
@@ -855,7 +893,36 @@ int Communicate_IMU(void) {
 
 }
 
+uint16_t keepLast16Bits(uint32_t intValue) {
+    uint32_t mask = 0xFFFF; // Mask to keep only last 16 bits (2 bytes)
+    uint32_t result = intValue & mask;
 
+    return result;
+}
+
+#define PACKET_SIZE 12 //X, Y, Z for lower and upper 8-bit of XL and Gyro
+#define NUM_SAMPLES 1 //how many packets
+
+int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
+
+    uint8_t mdata_buffer[PACKET_SIZE] = {0x00}; //the buffer where the data is saved to
+
+    int i;
+
+    for (i = 0; i < PACKET_SIZE; i++){
+
+        if(i < PACKET_SIZE/2){
+            mdata_buffer[i] = XL_data_read[i];
+        }
+        else{
+            mdata_buffer[i] = G_data_read[i-PACKET_SIZE/2];
+        }
+    }
+
+    send_databuffer(mdata_buffer,sizeof(mdata_buffer));
+
+    return 1;
+}
 
 /*
  *  ======== masterThread ========
@@ -918,37 +985,6 @@ void *masterThread(void *arg0)
 
     Power_enablePolicy(); //how to sleep
 
-    /*
-     * Handshake - Set Board_SPI_MASTER_READY high to indicate master is ready
-     * to run.  Wait Board_SPI_SLAVE_READY to be high.
-     */
- //   GPIO_write(Board_SPI_MASTER_READY, 1);
-  //  while (GPIO_read(Board_SPI_SLAVE_READY) == 0) {}
-
-    /* Handshake complete; now configure interrupt on Board_SPI_SLAVE_READY */
-  //  GPIO_setConfig(Board_SPI_SLAVE_READY, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
- //   GPIO_setCallback(Board_SPI_SLAVE_READY, slaveReadyFxn);
-  //  GPIO_enableInt(Board_SPI_SLAVE_READY);
-
-    /*
-     * Create synchronization semaphore; the master will wait on this semaphore
-     * until the slave is ready.
-     */
-
- //   status = sem_init(&masterSem, 0, 0);
- //   if (status != 0) {
-      //  Display_printf(display, 0, 0, "Error creating masterSem\n");
-
-   //     while(1);
-  //  }
-
-
-    /*
-     * Master has opened Board_SPI_MASTER; set Board_SPI_MASTER_READY high to
-     * inform the slave.
-     */
- //   GPIO_write(Board_SPI_MASTER_READY, 0);
-
     /* Communicate with IMU */
 
     init_SPI_IMU();
@@ -961,36 +997,52 @@ void *masterThread(void *arg0)
 
     while (1) {
 
-        int32_t XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-        int32_t G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
+        int check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1);
 
-      //  uint32_t XL_data_XY = (uint32_t)XL_data[0];
+        if(check_status == 1){
 
-      //  XL_data_XY <<= 16;
-      //  XL_data_XY |= XL_data[1];
+            uint8_t* XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
+            uint8_t* G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
 
-     //   printf("XL_data_XY: 0x%048\n", XL_data_XY);
+            RF_transmission(XL_data, G_data);
+        }
+        else{
+
+            sleep(standbyDuration);
+
+            /* Read current output value for all pins */
+            currentOutputVal =  PIN_getPortOutputValue(hPin);
+
+             /* Toggle the LEDs, configuring all LEDs at once */
+            PIN_setPortOutputValue(hPin, ~currentOutputVal);
+        }
 
 
-     //   send_databuffer(XL_data,sizeof(XL_data));
+    //    printf("XL_data_YL: 0x%02X\n", XL_data[2]);
+    //    printf("XL_data_YH: 0x%02X\n", XL_data[3]);
+   //     printf("XL_data_Z: 0x%08X\n", XL_data[2]);
+
+     //   printf("G_data_X: 0x%08X\n", G_data[0]);
+     //   printf("G_data_Y: 0x%08X\n", G_data[1]);
+     //   printf("G_data_Z: 0x%08X\n", G_data[2]);
+
+   //     uint32_t XL_data_XY = (uint32_t)XL_data[0];
+   //     uint16_t XL_X = keepLast16Bits(XL_data[0]);
+
+
+   //     XL_data_XY <<= 16;
+   //     XL_data_XY |= XL_data[1];
+
+   //     printf("XL_X: 0x%04X\n", XL_X);
+
+
+    //    send_databuffer(XL_X_sent,sizeof(XL_X_sent));
+    //    send_databuffer(data_sent,sizeof(data_sent));
+    //    send_databuffer(XL_Z_sent,sizeof(XL_Z_sent));
     //    send_databuffer(XL_data[1],sizeof(XL_data[1]));
 
 
-   //     int check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1);
 
-        /*transmit through RF*/
-
-   //     if(check_status==0){
-
-     //       sleep(3);
-
-            /* Read current output value for all pins */
-       //     currentOutputVal =  PIN_getPortOutputValue(hPin);
-
-            /* Toggle the LEDs, configuring all LEDs at once */
-         //   PIN_setPortOutputValue(hPin, ~currentOutputVal);
-
-     //   }
     }
 
     return (NULL);
