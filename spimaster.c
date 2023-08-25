@@ -66,19 +66,17 @@
 
 /* IMU */
 #include "Adafruit_LSM6DS_new.h"
+#include "Parameter_setting.h"
 
 /* Example/Board Header files */
 #include "smartrf_settings/smartrf_settings.h" // generated from smartrf application: 500 GB/s -> 915 MHz -> infinite 3512 code export; save; in the smartrf folder
 #include DeviceFamily_constructPath(driverlib/rf_prop_mailbox.h)
 /* Packet TX Configuration */
-#define PAYLOAD_LENGTH      20  //remember to update for multi packets! lengh of tx buffer, larger than data sending; one packet
+//#define PAYLOAD_LENGTH      20  //remember to update for multi packets! lengh of tx buffer, larger than data sending; one packet
 
 void send_databuffer(const void* buffer,int buffer_size);
 int Communicate_IMU(void);
 //void send_SPI_to_IMU(uint8_t *tx_buffer, uint8_t *rx_buffer, int word_count);
-
-
-int transmit_imu_data(const uint64_t NUM_SAMPLES);
 
 int init_SPI_IMU(void);
 int SPI_write_data(void);
@@ -111,14 +109,11 @@ int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
 static int16_t raw_temp; // need to set to be int16_t, otherwise does not make sense
 static int16_t raw_accel[3];
 static int8_t accel_8bit[6];
+
 static int16_t raw_angular[3];
 static int8_t angular_8bit[6];
-static uint8_t XL_X_sent[2];
-static uint8_t XL_Y_sent[2];
-static uint8_t G_sent[6];
-static uint8_t data_sent[12];
 
-static uint8_t XL_Z_sent[2];
+
 static float accel_g[3];
 static float angular_mdps[3];
 
@@ -180,7 +175,6 @@ void send_databuffer(const void* buffer, int buffer_size) // buffer: size of the
         for (i = 2; i < buffer_size+2 /*PAYLOAD_LENGTH+2*/; i++) // extra 2 bits for the length
         {
             packet[i]=a[i-2]; // load the whole array
-            //packet[i] = rand();
 //            packet[i] = ((uint8_t*)buffer)+(PAYLOAD_LENGTH)*j+i /* check pointer math */
         }
 
@@ -262,8 +256,8 @@ void send_databuffer(const void* buffer, int buffer_size) // buffer: size of the
 int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
     int32_t ret;
-    int16_t read_bit = 0x8000;
-    reg |= read_bit;
+  //  int16_t read_bit = 0x8000;
+    reg |= READ_BIT;
 
     uint8_t* tx_Address = &reg; /*Address of the register to write to IMU */
 
@@ -351,7 +345,7 @@ int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
     int32_t retH;
 
     uint16_t dummy_temp;
-    uint16_t temp_bit = 0x0004;
+  //  uint16_t temp_bit = 0x0004;
     uint8_t temp_buff[2];
 
     printf("Temperature buffer 1 before: 0x%02X\n", temp_buff[0]);
@@ -359,7 +353,7 @@ int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     ret = platform_read(handle, reg, &dummy_temp, len);
 
-    bool check_temp_aval = ((ret&temp_bit) == temp_bit); // if true, the temp data is ready
+    bool check_temp_aval = ((ret&TEMP_BIT) == TEMP_BIT); // if true, the temp data is ready
 
     printf("Is it ready to read T data? %d\n", check_temp_aval);
 
@@ -397,7 +391,7 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
     uint16_t data_ZH;
 
     uint16_t dummy_XL;
-    uint16_t XL_bit = 0x0001;
+  //  uint16_t XL_bit = 0x0001;
 
     uint8_t XL_buff_X[2];
     uint8_t XL_buff_Y[2];
@@ -405,7 +399,7 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     ret = platform_read(handle, reg, &dummy_XL, len); // Check OUTX_L_A to see if data is ready
 
-    bool check_XL_aval = ((ret&XL_bit) == XL_bit); // if true, the temp data is ready
+    bool check_XL_aval = ((ret&XL_BIT) == XL_BIT); // if true, the temp data is ready
 
   //  printf("Accelerometer data ready? %d\n", check_XL_aval);
 
@@ -439,9 +433,9 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     //    printf("data X: 0x%04X\n", raw_accel[0]);
 
-        accel_g[0] = ((float_t)raw_accel[0]) * 0.061f/1000; // Refer Adafruit_LSM6DS.cpp
-        accel_g[1] = ((float_t)raw_accel[1]) * 0.061f/1000;
-        accel_g[2] = ((float_t)raw_accel[2]) * 0.061f/1000;
+        accel_g[0] = ((float_t)raw_accel[0]) * XL_SCALE_RANGE_2_G/1000; // Refer Adafruit_LSM6DS.cpp
+        accel_g[1] = ((float_t)raw_accel[1]) * XL_SCALE_RANGE_2_G/1000;
+        accel_g[2] = ((float_t)raw_accel[2]) * XL_SCALE_RANGE_2_G/1000;
 
 
 
@@ -449,7 +443,7 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
     //    raw_accel[0] = raw_accel_x;
 
 
-   //     printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
+        printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
 
 
    }
@@ -469,14 +463,14 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
     uint16_t data_ZH;
 
     uint16_t dummy_G;
-    uint16_t G_bit = 0x0002;
+  //  uint16_t G_bit = 0x0002;
 
     uint8_t G_buff[6];
 
 
     ret = platform_read(handle, reg, &dummy_G, len); // Check OUTX_L_G to see if data is ready
 
-    bool check_G_aval = ((ret&G_bit) == G_bit); // if true, the data is ready
+    bool check_G_aval = ((ret&G_BIT) == G_BIT); // if true, the data is ready
 
   //  printf("Gyro data ready? %d\n", check_G_aval);
 
@@ -504,15 +498,15 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         raw_angular[1] = data_YL | data_YH;
         raw_angular[2] = data_ZL | data_ZH;
 
-        angular_mdps[0] = ((float_t)raw_angular[0]) * 35.0f/1000;
-        angular_mdps[1] = ((float_t)raw_angular[1]) * 35.0f/1000;
-        angular_mdps[2] = ((float_t)raw_angular[2]) * 35.0f/1000;
+        angular_mdps[0] = ((float_t)raw_angular[0]) * G_SCALE_RANGE_1000_DPS/1000;
+        angular_mdps[1] = ((float_t)raw_angular[1]) * G_SCALE_RANGE_1000_DPS/1000;
+        angular_mdps[2] = ((float_t)raw_angular[2]) * G_SCALE_RANGE_1000_DPS/1000;
 
    //     printf("raw_angular x: 0x%02X\n", raw_angular[0]);
    //     printf("raw_angular y: 0x%02X\n", raw_angular[1]);
    //     printf("raw_angular z: 0x%02X\n", raw_angular[2]);
 
-  //      printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
+        printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
 
    }
     return angular_8bit;
@@ -552,12 +546,12 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
     int data_status;
 
     uint16_t dummy_act;
-    uint16_t activity_bit = 0x0010;
+   // uint16_t activity_bit = 0x0010;
 
 
     ret = platform_read(handle, reg, &dummy_act, len);
 
-    bool check_activity = ((ret&activity_bit) == activity_bit); // if true, there's change in activity status
+    bool check_activity = ((ret&ACTIVITY_BIT) == ACTIVITY_BIT); // if true, there's change in activity status
 
     if(check_activity) {
         printf("zzzzzzzzzZZZZZZZZZZZZZZZZZ\n");
@@ -672,14 +666,14 @@ int init_SPI_IMU(void) {
 }
 
 int SPI_write_data(void) {
-    int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, 0x0050, 1);
-    int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, 0x0048, 1);
-    int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR,  0x0068, 1); // active time set to F - 37s
-    int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, 0x0002, 1);
+    int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, CTRL1_XL_VALUE, 1);
+    int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, CTRL2_G_VALUE, 1);
+    int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR,  WAKE_UP_DUR, 1); // active time set to F - 37s
+    int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS, 1);
            /* Enable interrupt and tap recognition */
-    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, 0x0000, 1);
-    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, 0x00E0, 1);
-    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, 0x0080, 1);
+    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, TAP_CFG0_VALUE, 1);
+    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, TAP_CFG2_VALUE, 1);
+    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, MD1_CFG_VALUE, 1);
 
     printf("SPI initialized successfully and IMU has been waken up\n");
 
@@ -900,8 +894,8 @@ uint16_t keepLast16Bits(uint32_t intValue) {
     return result;
 }
 
-#define PACKET_SIZE 12 //X, Y, Z for lower and upper 8-bit of XL and Gyro
-#define NUM_SAMPLES 1 //how many packets
+//#define PACKET_SIZE 12 //X, Y, Z for lower and upper 8-bit of XL and Gyro
+//#define NUM_SAMPLES 1 //how many packets
 
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
 
@@ -935,7 +929,7 @@ void *masterThread(void *arg0)
     PIN_State       pinState;
     PIN_Handle      hPin;
     uint32_t        currentOutputVal;
-    uint32_t        standbyDuration = 3;
+  //  uint32_t        standbyDuration = 3;
 
 
     /* Allocate LED pins */
@@ -1008,7 +1002,7 @@ void *masterThread(void *arg0)
         }
         else{
 
-            sleep(standbyDuration);
+            sleep(STANDBY_DURATION);
 
             /* Read current output value for all pins */
             currentOutputVal =  PIN_getPortOutputValue(hPin);
