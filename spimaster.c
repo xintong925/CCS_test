@@ -77,7 +77,7 @@
 
 void send_databuffer(const void* buffer,int buffer_size);
 int Communicate_IMU(void);
-//void send_SPI_to_IMU(uint8_t *tx_buffer, uint8_t *rx_buffer, int word_count);
+
 
 int init_SPI_IMU(void);
 int SPI_write_data(void);
@@ -113,7 +113,6 @@ static int8_t accel_8bit[6];
 
 static int16_t raw_angular[3];
 static int8_t angular_8bit[6];
-
 
 static float accel_g[3];
 static float angular_mdps[3];
@@ -328,6 +327,19 @@ int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
 }
 
 
+
+int Data_update_check(void *handle, uint16_t reg, uint16_t check_type){ //check_type: XL_BIT or G_BIT
+
+    uint8_t dummy_buf;
+    int16_t status_reg;
+
+    status_reg = platform_read(handle, reg, &dummy_buf, 1);
+    bool check_aval = ((status_reg & check_type) == check_type); // if true, the data is updated
+
+    return check_aval;
+}
+
+
 /**
   * @brief  Temperature data output register (r).
   *         L and H registers together express a 16-bit word in two's
@@ -339,58 +351,6 @@ int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
   *
   */
 
-
-int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
-
-    int32_t ret;
-    int32_t retL;
-    int32_t retH;
-
-    uint16_t dummy_temp;
-  //  uint16_t temp_bit = 0x0004;
-    uint8_t temp_buff[2];
-
-    printf("Temperature buffer 1 before: 0x%02X\n", temp_buff[0]);
-    printf("Temperature buffer 2  before: 0x%02X\n", temp_buff[1]);
-
-    ret = platform_read(handle, reg, &dummy_temp, len);
-
-    bool check_temp_aval = ((ret&TEMP_BIT) == TEMP_BIT); // if true, the temp data is ready
-
-    printf("Is it ready to read T data? %d\n", check_temp_aval);
-
-    if(check_temp_aval) {
-
-        retL = platform_read(masterSpi, LSM6DSOX_OUT_TEMP_L, temp_buff, 1);
-        retH = platform_read(masterSpi, LSM6DSOX_OUT_TEMP_H, temp_buff, 1);
-
-
-        printf("temp L after: 0x%02X\n", retL);
-        printf("temp H after: 0x%02X\n", retH);
-
-        retH <<= 8;
-        raw_temp = retL | retH;
-
-        printf("Received temperature: 0x%X\n", raw_temp);
-
-        float converted_temp = ((float_t)raw_temp / 256.0f) + 25.0f;
-        printf("Measured T is %f\n", converted_temp);
-
-    }
-    return raw_temp;
-}
-
-int Data_update_check(void *handle, uint16_t reg, uint16_t check_type){ //check_type: XL_BIT or G_BIT
-
-    uint8_t dummy_buf;
-    int16_t status_reg;
-
-    status_reg = platform_read(handle, reg, &dummy_buf, 1);
-    bool check_aval = ((status_reg & check_type) == check_type); // if true, the data is updated
-
-    return check_aval;
-
-}
 uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     uint16_t data_XL;
@@ -504,31 +464,6 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
 }
 
 
-/* reg: LSM6DSOX_ALL_INT_SRC */
-/* Tap detection
-void Tap_Detection(void *handle, uint16_t reg, uint16_t len) {
-
-    int32_t ret;
-
-    uint16_t dummy_tap;
-    uint16_t single_tap_bit = 0x0004;
-    uint16_t double_tap_bit = 0x0008;
-
-    ret = platform_read(handle, reg, &dummy_tap, len); // Check OUTX_L_G to see if data is ready
-
-    bool check_single_tap = ((ret&single_tap_bit) == single_tap_bit); // if true, the temp data is ready
-    bool check_double_tap = ((ret&double_tap_bit) == double_tap_bit); // if true, the temp data is ready
-
-    if(check_single_tap) {
-        printf("!!!!!!!!!!!!!!!!!!!!!!!!!! Single tap detected !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-    }
-
-    if(check_double_tap) {
-        printf("************************** Double tap detected ********************************\n");
-    }
-
-}
-*/
 
 int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
 
@@ -549,7 +484,7 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
         data_status = 0;
     }
     else{
-     //   printf("!!!!!!!!!!!!!!!!!!!!!Guten Tag!!!!!!!!!!!!!!!!!!!!\n");
+     //   printf("!!!!!!!!!!!!!!!!!!!!! Hello! !!!!!!!!!!!!!!!!!!!\n");
         data_status = 1;
     }
   //  printf("status is %d\n", data_status);
@@ -558,33 +493,10 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
 
 }
 
-// Function to introduce a delay in microseconds
 
 int init_SPI_IMU(void) {
-//
-    /* Enable G sleep mode and XL ultra-low power mode */
- //   uint16_t CTRL4_C_data_to_write = 0x0000; // CTRL4_C (13h): data to write 0b01000000 [Gyro sleep mode: enabled] (once enabled, no data is available for Gyro)
-//    uint16_t CTRL5_C_data_to_write = 0x0080; // CTRL5_C (14h): data to write 0b10000000 [XL ultra-low-power mode enable: enabled]
-//
-//    /* Disable I3C */
-//    uint16_t CTRL9_XL_data_to_write = 0x00E2; // CTRL9_XL (18h): data to write 0b11100010 [I3C disabled]
-//
 
-        /* Routing of functions including activity/sleep, tap and wake up on INT1 and INT2 */
-    //    uint16_t MD1_CFG_data_to_write = 0x00C0; // MD1_CFG (5Eh): 0b11000000 routing of activity/inactivity, single tap recognition event on INT1 enabled
-    //    uint16_t MD2_CFG_data_to_write = 0x0028; // MD2_CFG (5Fh): 0b00101000 routing of wake-up and double tap event on INT2 enabled
-//
-//    /* Function access setting */
-//    uint16_t FUNC_CFG_ACCESS_data_to_write = 0x0000; //FUNC_CFG_ACCESS (01h): bit[1:5] must be set to 0 for the correct operation of the device, the rest unsure
-//
-    /* INT pin configuration */
-//    uint16_t INT1_CTRL_data_to_write = 0x0003; //INT1_CTRL (0Dh): enables gyro and accel data-ready interrupt on INT1 pin.
- //   uint16_t INT2_CTRL_data_to_write = 0x0003; //INT2_CTRL (0Eh): enables gyro and accel data-ready interrupt on INT2 pin.
-//
-
-    // CTRL6_C, CTRL7_G, CTRL8_XL: ask
-
-       /* Initialize SPI parameters */
+/* Initialize SPI parameters */
 
     SPI_Params_init(&spiParams);            //spiParams is a global (TODO change eventually)
     spiParams.frameFormat = SPI_POL0_PHA0; // Mode 3
@@ -605,46 +517,9 @@ int init_SPI_IMU(void) {
         printf("Master SPI initialized\n");
     }
 
-//    /* Write data to register */
-//    /* Set ODR and scale for XL & G */
- //   int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, 0x0050, 1);
- //   int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, 0x0048, 1);
- //   int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR,  0x0064, 1);
- //   int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, 0x0002, 1);
 
-//
-//    int32_t Func_Access = platform_write(masterSpi, LSM6DSOX_FUNC_CFG_ACCESS, FUNC_CFG_ACCESS_data_to_write, 1);
-//
-//        /* Enable G to sleep */
-//    //    int32_t SleepEnable_G = platform_write(masterSpi, LSM6DSOX_CTRL4_C, CTRL4_C_data_to_write, 1);
-//    int32_t LowPower_Enable_XL = platform_write(masterSpi, LSM6DSOX_CTRL5_C, CTRL5_C_data_to_write, 1);
-//
-//        /* Enable interrupt and tap recognition */
-//    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, 0x0000, 1);
-//    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, 0x00E0, 1);
-//    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, 0x0000, 1);
-//     //   int32_t Tap_yThre = platform_write(masterSpi, LSM6DSOX_TAP_CFG1, TAP_CFG1_data_to_write, 1);
-//     //   int32_t Tap_zThre = platform_write(masterSpi, LSM6DSOX_TAP_THS_6D, TAP_THS_6D_data_to_write, 1);
-//     //   int32_t Tap_Dur = platform_write(masterSpi, LSM6DSOX_INT_DUR2, INT_DUR2_data_to_write, 1);
+/* Enable interrupt pin */
 
-//
-//
-//    int32_t I3C_Disable = platform_write(masterSpi, LSM6DSOX_CTRL9_XL, CTRL9_XL_data_to_write, 1);
-//    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, 0x0080, 1);
-//      //  int32_t INT2_Routing = platform_write(masterSpi, LSM6DSOX_MD2_CFG, MD2_CFG_data_to_write, 1);
-//    int32_t INT1_Control = platform_write(masterSpi, LSM6DSOX_INT1_CTRL, INT1_CTRL_data_to_write, 1);
-//     //   int32_t INT2_Control = platform_write(masterSpi, LSM6DSOX_INT2_CTRL, INT2_CTRL_data_to_write, 1);
-
-
-
-        /* Read data from register */
-     //   int32_t rx_Data_XL = platform_read(masterSpi, LSM6DSOX_CTRL7_G, &dummy_read_XL, 1);
-      //  int32_t rx_Data_G = platform_read(masterSpi, LSM6DSOX_CTRL5_C, &dummy_read_G, 1);
-      //  int32_t rx_SleepEnable_G = platform_read(masterSpi, LSM6DSOX_CTRL4_C, &dummy_read_G, 1);
-      //  int32_t rx_WakeUp = platform_read(masterSpi, LSM6DSOX_CTRL1_XL, &dummy_read_G, 1);
-     //   int32_t rx_InterEnable = platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy_read_G, 1);
-
-        /* Enable interrupt pin */
     GPIO_setConfig(Board_DIO12, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
  //   GPIO_setCallback(Board_DIO12, slaveReadyFxn);
     GPIO_enableInt(Board_DIO12);  /* INT1 */
@@ -667,212 +542,6 @@ int SPI_write_data(void) {
     int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, MD1_CFG_VALUE, 1);
 
     printf("SPI initialized successfully and IMU has been waken up\n");
-
-    return 0;
-
-}
-
-int Standby_MCU(void) {
-    printf("Entering sleeping mode! x1");
-    SPI_close(masterSpi);
-    printf("Entering sleeping mode! x2");
-    sleep(3);
-
-    printf("Entering sleeping mode! x3");
-    init_SPI_IMU();
-    printf("Waking up!");
-
-    return 0;
-}
-
-//void intCallbackFxn(PIN_Handle handle, PIN_Id pinId)
-void wakeUpCallback(void)
-{
-    // Add your wake-up tasks or data processing here
-    // For example, toggle an LED to indicate wake-up
-    printf("MCU is waken up!");
-}
-
-
-
-int Communicate_IMU(void) {
-
-    uint8_t dummy_read_XL; //read data - to verify if transmit successfully
-    uint8_t dummy_read_G;
-
-    int check_status;
-
-    /* Turn on XL and Gyro */
-    uint16_t CTRL1_XL_data_to_write = 0x0050; // CTRL1_XL (10h): data to write 0b00000101 [High performance; ODR: 208Hz; Full scale selection: 2g]
-    uint16_t CTRL2_G_data_to_write = 0x0048; // CTRL2_G (11h): data to write 0b00011000 [Hi performance; ODR: 104Hz; Gyro UI chain full-scale selction: 1000dps]
-
-    /* Set duration for Inactivity detection */
-    /* Select Activity/Inactivity threshold resolution and duration */
-    uint16_t WAKE_UP_DUR_data_to_write = 0x0064; // WAKE_UP_DUR (5Ch): 0b00000100 [wake_dur: 14.4 ms; sleep_dur: 9.8 s - if no activity, enter sleeping mode].
-
-    /* Set Activity/Inactivity threshold resolution and duration */
-    uint16_t WAKE_UP_THS_data_to_write = 0x0002; // both single and double are enabled; Activity threshold is 1.5g.
-
-    /* Select sleep-change notification */
-    /* Select slope filter */
-    uint16_t TAP_CFG0_data_to_write = 0x0000; // TAP_CFG0 (56h): 0b00000000; Slope filter applied.
-
-    /* Enable interrupt */
-    /* Inactivity configuration: accelerometer to 12.5Hz, Gyro to power down */
-    uint16_t TAP_CFG2_data_to_write = 0x00E0; //  old: C9 TAP_CFG2 (58h): 0b11100000; [XL ODR 12.5 Hz; G power down] - enables interrupt and inactivity functions
-
-    /* Activity/Inactivity interrupt driven in INT1 pin */
-    uint16_t MD1_CFG_data_to_write = 0x0080; // MD1_CFG (5Eh): 0b10000000 routing of activity/inactivity to INT1 enabled
-
-    /* Enable G sleep mode and XL ultra-low power mode */
-    uint16_t CTRL4_C_data_to_write = 0x0000; // CTRL4_C (13h): data to write 0b01000000 [Gyro sleep mode: enabled] (once enabled, no data is available for Gyro)
-    uint16_t CTRL5_C_data_to_write = 0x0080; // CTRL5_C (14h): data to write 0b10000000 [XL ultra-low-power mode enable: enabled]
-
-    /* Disable I3C */
-    uint16_t CTRL9_XL_data_to_write = 0x00E2; // CTRL9_XL (18h): data to write 0b11100010 [I3C disabled]
-
-
-    /* Routing of functions including activity/sleep, tap and wake up on INT1 and INT2 */
-//    uint16_t MD1_CFG_data_to_write = 0x00C0; // MD1_CFG (5Eh): 0b11000000 routing of activity/inactivity, single tap recognition event on INT1 enabled
-//    uint16_t MD2_CFG_data_to_write = 0x0028; // MD2_CFG (5Fh): 0b00101000 routing of wake-up and double tap event on INT2 enabled
-
-    /* Function access setting */
-    uint16_t FUNC_CFG_ACCESS_data_to_write = 0x0000; //FUNC_CFG_ACCESS (01h): bit[1:5] must be set to 0 for the correct operation of the device, the rest unsure
-
-    /* INT pin configuration */
-    uint16_t INT1_CTRL_data_to_write = 0x0003; //INT1_CTRL (0Dh): enables gyro and accel data-ready interrupt on INT1 pin.
-    uint16_t INT2_CTRL_data_to_write = 0x0003; //INT2_CTRL (0Eh): enables gyro and accel data-ready interrupt on INT2 pin.
-
-
-// CTRL6_C, CTRL7_G, CTRL8_XL: ask
-
-   /* Initialize SPI parameters */
-
-    SPI_Params_init(&spiParams);            //spiParams is a global (TODO change eventually)
-    spiParams.frameFormat = SPI_POL1_PHA1; // Mode 3
-    spiParams.bitRate = 1000000;
-    spiParams.mode = SPI_MASTER;
-    spiParams.dataSize = 16;
-    spiParams.transferMode = SPI_MODE_BLOCKING;
-    //GPIO_write(Board_SPI_MASTER_READY, 0); //AG CHECK TODO check
-
-    /* Open SPI */
-    masterSpi = SPI_open(Board_SPI_MASTER, &spiParams);    //masterSPI is a global (TODO change eventually)
-    if (masterSpi == NULL) {
-        //Display_printf(display, 0, 0, "Error initializing master SPI\n");
-        printf("Errorrrrrrr initializing master SPI\n");
-        while (1);
-    }
-    else {
-        printf("Masterrrrrrrr SPI initialized\n");
-    }
-
-    /* Write data to register */
-    /* Set ODR and scale for XL & G */
-    int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, CTRL1_XL_data_to_write, 1);
-    int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, CTRL2_G_data_to_write, 1);
-
-    int32_t Func_Access = platform_write(masterSpi, LSM6DSOX_FUNC_CFG_ACCESS, FUNC_CFG_ACCESS_data_to_write, 1);
-
-    /* Enable G to sleep */
-//    int32_t SleepEnable_G = platform_write(masterSpi, LSM6DSOX_CTRL4_C, CTRL4_C_data_to_write, 1);
-    int32_t LowPower_Enable_XL = platform_write(masterSpi, LSM6DSOX_CTRL5_C, CTRL5_C_data_to_write, 1);
-
-    /* Enable interrupt and tap recognition */
-    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, TAP_CFG0_data_to_write, 1);
-    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, TAP_CFG2_data_to_write, 1);
- //   int32_t Tap_yThre = platform_write(masterSpi, LSM6DSOX_TAP_CFG1, TAP_CFG1_data_to_write, 1);
- //   int32_t Tap_zThre = platform_write(masterSpi, LSM6DSOX_TAP_THS_6D, TAP_THS_6D_data_to_write, 1);
- //   int32_t Tap_Dur = platform_write(masterSpi, LSM6DSOX_INT_DUR2, INT_DUR2_data_to_write, 1);
-    int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_data_to_write, 1);
-
-
-    int32_t I3C_Disable = platform_write(masterSpi, LSM6DSOX_CTRL9_XL, CTRL9_XL_data_to_write, 1);
-    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, MD1_CFG_data_to_write, 1);
-  //  int32_t INT2_Routing = platform_write(masterSpi, LSM6DSOX_MD2_CFG, MD2_CFG_data_to_write, 1);
-    int32_t INT1_Control = platform_write(masterSpi, LSM6DSOX_INT1_CTRL, INT1_CTRL_data_to_write, 1);
- //   int32_t INT2_Control = platform_write(masterSpi, LSM6DSOX_INT2_CTRL, INT2_CTRL_data_to_write, 1);
-    int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR, WAKE_UP_DUR_data_to_write, 1);
-
-
-    /* Read data from register */
- //   int32_t rx_Data_XL = platform_read(masterSpi, LSM6DSOX_CTRL7_G, &dummy_read_XL, 1);
-  //  int32_t rx_Data_G = platform_read(masterSpi, LSM6DSOX_CTRL5_C, &dummy_read_G, 1);
-  //  int32_t rx_SleepEnable_G = platform_read(masterSpi, LSM6DSOX_CTRL4_C, &dummy_read_G, 1);
-  //  int32_t rx_WakeUp = platform_read(masterSpi, LSM6DSOX_CTRL1_XL, &dummy_read_G, 1);
- //   int32_t rx_InterEnable = platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy_read_G, 1);
-
-    /* Enable interrupt pin */
-//    GPIO_setConfig(Board_DIO12, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
-//    // Set up the callback function for the wake-up ISR
-//    GPIO_setCallback(Board_DIO12, wakeUpCallback);
-//    GPIO_enableInt(Board_DIO12);  /* INT1 */
-
-//    GPIO_setConfig(Board_DIO15, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
-//    GPIO_enableInt(Board_DIO15);  /* INT2 */
-
-  //  /*  Enable GPIO 3 (index 3 in gpioPinCongfigs in LAUNCHXL.c) for nDRDY Interupt */
-  //  GPIO_setConfig(3, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);//GPIO_CFG_IN_PU, rising in INT, go into slave ready - to 1
-  //  GPIO_setCallback(3, slaveReadyFxn);
-  //  GPIO_enableInt(3);
-
-    /* Read T value */
-  //  int32_t tempdata = Temperature_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-    int counter = 0;
-
-    /* Read XL value - acceleration */
-    while (1) {
-
-        int32_t XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-
-        int32_t G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-        check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1);
-        counter += 1;
-        printf("now is %d\n time\n", counter);
-
-        if(counter==20){
-            printf("Entering sleeping mode since number is %d\n", counter);
-            SPI_close(masterSpi);
-
-            sleep(3);
-
-            printf("Entering sleeping mode!");
-            init_SPI_IMU();
-            printf("Waking up!");
-            check_status = 1;
-
-        }
-    }
-
-        /* Read current output value for all pins */
-   //     currentOutputVal =  PIN_getPortOutputValue(hPin);
-
-        /* Toggle the LEDs, configuring all LEDs at once */
-     //   PIN_setPortOutputValue(hPin, ~currentOutputVal);
-
-    //    init_SPI_IMU();
-
-
-        /* Sleep, to let the power policy transition the device to standby */
-    //    sleep(standbyDuration);
-
-     //   init_SPI_IMU();
-
-        /* Read current output value for all pins */
-   //     currentOutputVal =  PIN_getPortOutputValue(hPin);
-
-        /* Toggle the LEDs, configuring all LEDs at once */
-    //    PIN_setPortOutputValue(hPin, ~currentOutputVal);
-
-
-    /* Read Gyro value - angular rate */
-  //  int32_t G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-
-  //  memset()
-
-
-    /* Close SPI */
-    SPI_close(masterSpi);
 
     return 0;
 
@@ -924,8 +593,6 @@ int Voltage_Temp_read(void){
     return 1;
 
 }
-//#define PACKET_SIZE 12 //X, Y, Z for lower and upper 8-bit of XL and Gyro
-//#define NUM_SAMPLES 1 //how many packets
 
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
 
@@ -933,20 +600,20 @@ int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
 
     int i;
 
-    for (i = 0; i < PACKET_SIZE; i++){
+    for (i = 0; i < PACKET_SIZE/2; i++){
 
-        if(i < PACKET_SIZE/2){
-            mdata_buffer[i] = XL_data_read[i];
-        }
-        else{
-            mdata_buffer[i] = G_data_read[i-PACKET_SIZE/2];
-        }
+        mdata_buffer[i] = XL_data_read[i];
+        mdata_buffer[i + PACKET_SIZE/2] = G_data_read[i];
+
     }
 
     send_databuffer(mdata_buffer,sizeof(mdata_buffer));
 
     return 1;
 }
+
+
+
 
 /*
  *  ======== masterThread ========
@@ -1051,32 +718,6 @@ void *masterThread(void *arg0)
              /* Toggle the LEDs, configuring all LEDs at once */
             PIN_setPortOutputValue(hPin, ~currentOutputVal);
         }
-
-
-    //    printf("XL_data_YL: 0x%02X\n", XL_data[2]);
-    //    printf("XL_data_YH: 0x%02X\n", XL_data[3]);
-   //     printf("XL_data_Z: 0x%08X\n", XL_data[2]);
-
-     //   printf("G_data_X: 0x%08X\n", G_data[0]);
-     //   printf("G_data_Y: 0x%08X\n", G_data[1]);
-     //   printf("G_data_Z: 0x%08X\n", G_data[2]);
-
-   //     uint32_t XL_data_XY = (uint32_t)XL_data[0];
-   //     uint16_t XL_X = keepLast16Bits(XL_data[0]);
-
-
-   //     XL_data_XY <<= 16;
-   //     XL_data_XY |= XL_data[1];
-
-   //     printf("XL_X: 0x%04X\n", XL_X);
-
-
-    //    send_databuffer(XL_X_sent,sizeof(XL_X_sent));
-    //    send_databuffer(data_sent,sizeof(data_sent));
-    //    send_databuffer(XL_Z_sent,sizeof(XL_Z_sent));
-    //    send_databuffer(XL_data[1],sizeof(XL_data[1]));
-
-
 
     }
 
