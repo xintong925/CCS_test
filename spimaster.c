@@ -63,6 +63,7 @@
 #include <ti/drivers/rf/RF.h>
 #include <ti/drivers/Power.h>
 #include <ti/devices/cc13x0/driverlib/gpio.h>
+#include <ti/devices/cc13x0/driverlib/aon_batmon.h>
 
 /* IMU */
 #include "Adafruit_LSM6DS_new.h"
@@ -85,6 +86,7 @@ int Standby_MCU(void);
 int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
 int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len);
 int32_t platform_read_multiple(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
+int Data_update_check(void *handle, uint16_t reg, uint16_t check_type);
 
 int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len);
 uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len);
@@ -93,8 +95,7 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len);
 void Tap_Detection(void *handle, uint16_t reg, uint16_t len);
 int Activity_Detection(void *handle, uint16_t reg, uint16_t len);
 void wakeUpCallback(void);
-uint16_t concatenateHexNumbers(uint16_t num1, uint16_t num2);
-uint16_t keepLast16Bits(uint32_t intValue);
+int Voltage_Temp_read(void);
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
 
 #define THREADSTACKSIZE (1024)
@@ -338,6 +339,7 @@ int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
   *
   */
 
+
 int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     int32_t ret;
@@ -378,10 +380,18 @@ int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len) {
     return raw_temp;
 }
 
+int Data_update_check(void *handle, uint16_t reg, uint16_t check_type){ //check_type: XL_BIT or G_BIT
 
+    uint8_t dummy_buf;
+    int16_t status_reg;
+
+    status_reg = platform_read(handle, reg, &dummy_buf, 1);
+    bool check_aval = ((status_reg & check_type) == check_type); // if true, the data is updated
+
+    return check_aval;
+
+}
 uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
-
-    int16_t ret;
 
     uint16_t data_XL;
     uint16_t data_XH;
@@ -390,18 +400,12 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
     uint16_t data_ZL;
     uint16_t data_ZH;
 
-    uint16_t dummy_XL;
-  //  uint16_t XL_bit = 0x0001;
-
     uint8_t XL_buff_X[2];
     uint8_t XL_buff_Y[2];
     uint8_t XL_buff_Z[2];
 
-    ret = platform_read(handle, reg, &dummy_XL, len); // Check OUTX_L_A to see if data is ready
+    int check_XL_aval = Data_update_check(handle, reg, XL_BIT);
 
-    bool check_XL_aval = ((ret&XL_BIT) == XL_BIT); // if true, the temp data is ready
-
-  //  printf("Accelerometer data ready? %d\n", check_XL_aval);
 
     if(check_XL_aval) {
 
@@ -439,11 +443,7 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
 
 
-    //    uint32_t raw_accel_x = keepLast16Bits(raw_accel[0]);
-    //    raw_accel[0] = raw_accel_x;
-
-
-        printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
+    //    printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
 
 
    }
@@ -453,7 +453,6 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
 uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
-    int16_t ret;
 
     uint16_t data_XL;
     uint16_t data_XH;
@@ -462,17 +461,9 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
     uint16_t data_ZL;
     uint16_t data_ZH;
 
-    uint16_t dummy_G;
-  //  uint16_t G_bit = 0x0002;
-
     uint8_t G_buff[6];
 
-
-    ret = platform_read(handle, reg, &dummy_G, len); // Check OUTX_L_G to see if data is ready
-
-    bool check_G_aval = ((ret&G_BIT) == G_BIT); // if true, the data is ready
-
-  //  printf("Gyro data ready? %d\n", check_G_aval);
+    int check_G_aval = Data_update_check(handle, reg, G_BIT);
 
     if(check_G_aval) {
 
@@ -506,7 +497,7 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
    //     printf("raw_angular y: 0x%02X\n", raw_angular[1]);
    //     printf("raw_angular z: 0x%02X\n", raw_angular[2]);
 
-        printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
+     //   printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
 
    }
     return angular_8bit;
@@ -554,7 +545,7 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
     bool check_activity = ((ret&ACTIVITY_BIT) == ACTIVITY_BIT); // if true, there's change in activity status
 
     if(check_activity) {
-        printf("zzzzzzzzzZZZZZZZZZZZZZZZZZ\n");
+    //    printf("zzzzzzzzzZZZZZZZZZZZZZZZZZ\n");
         data_status = 0;
     }
     else{
@@ -887,13 +878,52 @@ int Communicate_IMU(void) {
 
 }
 
-uint16_t keepLast16Bits(uint32_t intValue) {
-    uint32_t mask = 0xFFFF; // Mask to keep only last 16 bits (2 bytes)
-    uint32_t result = intValue & mask;
+int Voltage_Temp_read(void){
+    //Get battery voltage (this will return battery voltage in decimal form you need to convert)
+    uint32_t BATstatus = AONBatMonBatteryVoltageGet();
+    //Get current temp as a signed value in Deg Celsius
+    uint32_t TEMPstatus = AONBatMonTemperatureGetDegC();
 
-    return result;
+    // convert in Milli volts
+    BATstatus = (BATstatus * 125) >> 5;
+
+    //convert in floating point value
+    float BATvoltage = (float)BATstatus / 1000;
+
+  //  float TEMPdegc = (float)TEMPstatus;
+
+    uint8_t Bat_bytes[2] =
+    {
+      ((uint32_t)BATstatus >> 8) & 0xFF,  // shift by 0 not needed, of course, just stylistic
+      ((uint32_t)BATstatus >> 0) & 0xFF,
+    };
+
+    uint8_t Temp_bytes[2] =
+    {
+      ((uint32_t)TEMPstatus >> 8) & 0xFF,
+      ((uint32_t)TEMPstatus >> 0) & 0xff,
+    };
+
+    float TEMPdegc = (float)TEMPstatus;
+
+    uint8_t mdata_buffer[4];
+
+    int i;
+
+    for(i = 0; i < 2; i++){
+        mdata_buffer[i] = Bat_bytes[i];
+        mdata_buffer[i + 2] = Temp_bytes[i];
+    }
+
+    printf("Voltage is %f\n", BATvoltage);
+    printf("Temp is %f\n", TEMPdegc);
+
+
+    send_databuffer(mdata_buffer,sizeof(mdata_buffer));
+
+    return 1;
+
 }
-
 //#define PACKET_SIZE 12 //X, Y, Z for lower and upper 8-bit of XL and Gyro
 //#define NUM_SAMPLES 1 //how many packets
 
@@ -984,6 +1014,9 @@ void *masterThread(void *arg0)
     init_SPI_IMU();
     SPI_write_data();
 
+    // enable battery monitor enable
+    AONBatMonEnable();
+
     /* Check IMU ID */
  //   uint8_t dummy_read_XL;
  //   int32_t rx_Data_XL = platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy_read_XL, 1);
@@ -995,12 +1028,20 @@ void *masterThread(void *arg0)
 
         if(check_status == 1){
 
-            uint8_t* XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
-            uint8_t* G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
+            int check_G_aval = Data_update_check(masterSpi, LSM6DSOX_STATUS_REG, G_BIT);
 
-            RF_transmission(XL_data, G_data);
+            if(check_G_aval){
+
+                uint8_t* XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
+                uint8_t* G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
+                RF_transmission(XL_data, G_data);
+            }
+
         }
         else{
+
+            //send_databuffer(test_buffer,sizeof(test_buffer));
+            Voltage_Temp_read();
 
             sleep(STANDBY_DURATION);
 
