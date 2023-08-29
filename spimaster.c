@@ -76,25 +76,22 @@
 //#define PAYLOAD_LENGTH      20  //remember to update for multi packets! lengh of tx buffer, larger than data sending; one packet
 
 void send_databuffer(const void* buffer,int buffer_size);
-int Communicate_IMU(void);
-
 
 int init_SPI_IMU(void);
 int SPI_write_data(void);
 
-int Standby_MCU(void);
+
 int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
 int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len);
-int32_t platform_read_multiple(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
+
 int Data_update_check(void *handle, uint16_t reg, uint16_t check_type);
 
-int16_t Temperature_raw_get(void *handle, uint16_t reg, uint16_t len);
 uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len);
 uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len);
 
-void Tap_Detection(void *handle, uint16_t reg, uint16_t len);
+
 int Activity_Detection(void *handle, uint16_t reg, uint16_t len);
-void wakeUpCallback(void);
+
 int Voltage_Temp_read(void);
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
 
@@ -155,6 +152,14 @@ void slaveReadyFxn(uint_least8_t index)
     data_ready = 1;
     //sem_post(&masterSem);
 }
+
+/*
+ * @brief  Send data through RF transmission
+ *
+ * @param  buffer            Array of 8-bit packet to be sent
+ * @param  buffer_size       Size of the array
+ *
+ */
 
 void send_databuffer(const void* buffer, int buffer_size) // buffer: size of the data element is undefined
 {
@@ -243,20 +248,19 @@ void send_databuffer(const void* buffer, int buffer_size) // buffer: size of the
 
 
 /*
- * @brief  Read generic device register (platform dependent)
+ * @brief  Read register of IMU
  *
- * @param  handle    customizable argument. In this examples is used in
- *                   order to select the correct sensor bus handler.
- * @param  reg       register to read
- * @param  bufp      pointer to buffer that store the data read
- * @param  len       number of consecutive register to read
+ * @param  handle    masterSpi
+ * @param  reg       Register to read from IMU
+ * @param  bufp      Pointer to buffer that store the data read
+ * @param  len       Number of consecutive register to read (always set to 1 - consider deleting this)
  *
+ * @return  Value of the register read from IMU
  */
 //e.g. platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy, 1);
 int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
     int32_t ret;
-  //  int16_t read_bit = 0x8000;
     reg |= READ_BIT;
 
     uint8_t* tx_Address = &reg; /*Address of the register to write to IMU */
@@ -281,22 +285,21 @@ int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
     }
 
     ret = *bufp;
- //   printf("Received: 0x%04X\n", ret);
+  //  printf("Received: 0x%04X\n", ret); // for debugging: check if match smartrf
 
     return ret;
 }
 
 /*
- * @brief  Write generic device register (platform dependent)
+ * @brief  Write value to register of IMU
  *
- * @param  handle    customizable argument. In this examples is used in
- *                   order to select the correct sensor bus handler.
- * @param  reg       register to write
- * @param  data      data to write to reg
- * @param  len       number of consecutive register to write
+ * @param  handle    masterSpi
+ * @param  reg       Register to write to IMU
+ * @param  data      Data to write to reg (here is 0xXXXX)
+ * @param  len       Number of consecutive register to write
  *
+ * @return  The data written to the register of IMU
  */
-
 //e.g. platform_write(masterSpi, LSM6DSOX_CTRL1_XL, data_to_write, 1);
 int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
 {
@@ -327,7 +330,16 @@ int32_t platform_write(void *handle, uint16_t reg, uint16_t data, uint16_t len)
 }
 
 
-
+/*
+ * @brief  Check the status register of IMU to see if there is new acceleration or angular velocity available
+ *
+ * @param  handle          masterSpi
+ * @param  reg             Register to check
+ * @param  check_type      XL_BIT to check acceleration; G_BIT to check angular velocity
+ *
+ * @return  1-new data; 0-no new data
+ */
+//e.g. Data_update_check(masterSpi, LSM6DSOX_STATUS_REG, XL_BIT);
 int Data_update_check(void *handle, uint16_t reg, uint16_t check_type){ //check_type: XL_BIT or G_BIT
 
     uint8_t dummy_buf;
@@ -341,16 +353,16 @@ int Data_update_check(void *handle, uint16_t reg, uint16_t check_type){ //check_
 
 
 /**
-  * @brief  Temperature data output register (r).
+  * @brief  Acceleration data output
   *         L and H registers together express a 16-bit word in two's
-  *         complement.[get]
+  *         complement.
+  * @param  handle      masterSpi
+  * @param  reg         Register of IMU to check data ready status
+  * @param  len         Number of consecutive register to write
   *
-  * @param  ctx      read / write interface definitions
-  * @param  buff     buffer that stores data read
-  * @retval             interface status (MANDATORY: return 0 -> no Error)
-  *
+  * @return Array of 6 8-bit hex number (x, y, z axis low and high value)
   */
-
+//e.g. Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1)
 uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
     uint16_t data_XL;
@@ -401,8 +413,6 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
         accel_g[1] = ((float_t)raw_accel[1]) * XL_SCALE_RANGE_2_G/1000;
         accel_g[2] = ((float_t)raw_accel[2]) * XL_SCALE_RANGE_2_G/1000;
 
-
-
     //    printf("Acceleration [g]:%4.2f\t%4.2f\t%4.2f\r\n", accel_g[0], accel_g[1], accel_g[2]);
 
 
@@ -410,7 +420,17 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len) {
     return accel_8bit;
 }
 
-
+/**
+  * @brief  Gyroscope data output
+  *         L and H registers together express a 16-bit word in two's
+  *         complement.
+  * @param  handle      masterSpi
+  * @param  reg         Register of IMU to check data ready status
+  * @param  len         Number of consecutive register to write - always set to 1
+  *
+  * @return Array of 6 8-bit hex number (x, y, z axis low and high value)
+  */
+//e.g. Angular_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1)
 uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
 
 
@@ -453,17 +473,20 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         angular_mdps[1] = ((float_t)raw_angular[1]) * G_SCALE_RANGE_1000_DPS/1000;
         angular_mdps[2] = ((float_t)raw_angular[2]) * G_SCALE_RANGE_1000_DPS/1000;
 
-   //     printf("raw_angular x: 0x%02X\n", raw_angular[0]);
-   //     printf("raw_angular y: 0x%02X\n", raw_angular[1]);
-   //     printf("raw_angular z: 0x%02X\n", raw_angular[2]);
-
      //   printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
 
    }
     return angular_8bit;
 }
 
-
+/**
+  * @brief  Check if there is activity detected in IMU
+  *
+  * @param  handle      masterSpi
+  * @param  reg         Wake up register of IMU - LSM6DSOX_WAKE_UP_SRC
+  * @param  len         Number of consecutive register to write
+  *
+  */
 
 int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
 
@@ -472,8 +495,6 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
     int data_status;
 
     uint16_t dummy_act;
-   // uint16_t activity_bit = 0x0010;
-
 
     ret = platform_read(handle, reg, &dummy_act, len);
 
@@ -487,12 +508,13 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
      //   printf("!!!!!!!!!!!!!!!!!!!!! Hello! !!!!!!!!!!!!!!!!!!!\n");
         data_status = 1;
     }
-  //  printf("status is %d\n", data_status);
-
     return data_status;
 
 }
 
+/**
+  * @brief  Initialize SPI communication and GPIO interrupts
+  */
 
 int init_SPI_IMU(void) {
 
@@ -531,21 +553,36 @@ int init_SPI_IMU(void) {
 
 }
 
+
+/**
+  * @brief  Assign value to IMU registers
+  *
+  */
+
 int SPI_write_data(void) {
-    int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, CTRL1_XL_VALUE, 1);
-    int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, CTRL2_G_VALUE, 1);
-    int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR,  WAKE_UP_DUR, 1); // active time set to F - 37s
-    int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS, 1);
-           /* Enable interrupt and tap recognition */
-    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, TAP_CFG0_VALUE, 1);
-    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, TAP_CFG2_VALUE, 1);
-    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, MD1_CFG_VALUE, 1);
+    int32_t new_data_XL = platform_write(masterSpi, LSM6DSOX_CTRL1_XL, CTRL1_XL_VALUE, 1);      // Turn on the accelerometer by setting ODR_XL and FS_XL
+    int32_t new_data_G = platform_write(masterSpi, LSM6DSOX_CTRL2_G, CTRL2_G_VALUE, 1);         // Turn on the gyroscope by setting ODR_G and FS_G
+    int32_t WakeUpDur = platform_write(masterSpi, LSM6DSOX_WAKE_UP_DUR,  WAKE_UP_DUR, 1);       // Set duration for inactivity detection
+                                                                                                // Select activity/inactivity threshold resolution and duration
+    int32_t WakeUpTHS = platform_write(masterSpi, LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS, 1);        // Set activity/inactivity threshold
+
+    int32_t Tap_Enable = platform_write(masterSpi, LSM6DSOX_TAP_CFG0, TAP_CFG0_VALUE, 1);       // Select sleep-change notification
+                                                                                                // Select slope filter
+    int32_t InterruptEnable = platform_write(masterSpi, LSM6DSOX_TAP_CFG2, TAP_CFG2_VALUE, 1);  // Enable interrupt
+                                                                                                // Inacitvity configuration: accelerometer to 12.5 Hz (LP mode)
+                                                                                                // Gyroscope to Power-Down mode
+    int32_t INT1_Routing = platform_write(masterSpi, LSM6DSOX_MD1_CFG, MD1_CFG_VALUE, 1);       // Activity/Inactivity interrupt driven to INT1 pin
 
     printf("SPI initialized successfully and IMU has been waken up\n");
 
     return 0;
 
 }
+
+
+/**
+  * @brief  Read voltage and temperature on MCU with TI functions and send directly through RF
+  */
 
 int Voltage_Temp_read(void){
     //Get battery voltage (this will return battery voltage in decimal form you need to convert)
@@ -593,6 +630,11 @@ int Voltage_Temp_read(void){
     return 1;
 
 }
+
+
+/**
+  * @brief  Send acceleration and angular velocity (6x 8-bit packets each) through RF transmission
+  */
 
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
 
