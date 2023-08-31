@@ -94,6 +94,7 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len);
 
 int Voltage_Temp_read(void);
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
+void activityDetectionFxn(uint_least8_t index);
 
 #define THREADSTACKSIZE (1024)
 
@@ -113,6 +114,8 @@ static int8_t angular_8bit[6];
 
 static float accel_g[3];
 static float angular_mdps[3];
+
+uint8_t activity_detection = 1;
 
 
 
@@ -258,7 +261,7 @@ void send_databuffer(const void* buffer, int buffer_size) // buffer: size of the
  * @return  Value of the register read from IMU
  */
 //e.g. platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy, 1);
-int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
+int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len) //potential power saving: buffer
 {
     int32_t ret;
     reg |= READ_BIT;
@@ -281,10 +284,10 @@ int32_t platform_read(void *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
     else {
         printf("SPI transfer failed\n");
         printf("Transmitted: 0x%04X\n", reg);
-        while(1);
+        while(1); //send message through RF and exit to the main loop
     }
 
-    ret = *bufp;
+    ret = *bufp; //return a known message so know what error it is
   //  printf("Received: 0x%04X\n", ret); // for debugging: check if match smartrf
 
     return ret;
@@ -461,6 +464,8 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         angular_8bit[4] = (uint8_t)data_ZH;
         angular_8bit[5] = (uint8_t)data_ZL;
 
+
+        // can be removed
         data_XH <<= 8;
         data_YH <<= 8;
         data_ZH <<= 8;
@@ -473,7 +478,7 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
         angular_mdps[1] = ((float_t)raw_angular[1]) * G_SCALE_RANGE_1000_DPS/1000;
         angular_mdps[2] = ((float_t)raw_angular[2]) * G_SCALE_RANGE_1000_DPS/1000;
 
-     //   printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
+    //    printf("Angular rate [dps]:%4.2f\t%4.2f\t%4.2f\r\n", angular_mdps[0], angular_mdps[1], angular_mdps[2]);
 
    }
     return angular_8bit;
@@ -512,6 +517,8 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
 
 }
 
+
+
 /**
   * @brief  Initialize SPI communication and GPIO interrupts
   */
@@ -542,9 +549,13 @@ int init_SPI_IMU(void) {
 
 /* Enable interrupt pin */
 
-    GPIO_setConfig(Board_DIO12, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
- //   GPIO_setCallback(Board_DIO12, slaveReadyFxn);
-    GPIO_enableInt(Board_DIO12);  /* INT1 */
+ //   GPIO_setConfig(Board_DIO12, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
+ //   GPIO_setCallback(Board_DIO12, activityDetectionFxn);
+ //   GPIO_enableInt(Board_DIO12);  /* INT1 */
+
+    GPIO_setConfig(3, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
+    GPIO_setCallback(3, activityDetectionFxn);
+    GPIO_enableInt(3);  /* INT1 */
 
     GPIO_setConfig(Board_DIO15, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
     GPIO_enableInt(Board_DIO15);  /* INT2 */
@@ -555,7 +566,7 @@ int init_SPI_IMU(void) {
 
 
 /**
-  * @brief  Assign value to IMU registers
+  * @brief  Assign value to IMU registers // can change the name of the function
   *
   */
 
@@ -654,7 +665,11 @@ int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read){
     return 1;
 }
 
+void activityDetectionFxn(uint_least8_t index)
+{
+    activity_detection = 0;
 
+}
 
 
 /*
@@ -720,7 +735,7 @@ void *masterThread(void *arg0)
 
     /* Communicate with IMU */
 
-    init_SPI_IMU();
+    init_SPI_IMU(); //send message if it's successful
     SPI_write_data();
 
     // enable battery monitor enable
@@ -731,13 +746,17 @@ void *masterThread(void *arg0)
  //   int32_t rx_Data_XL = platform_read(masterSpi, LSM6DSOX_WHOAMI, &dummy_read_XL, 1);
 
 
-    while (1) {
+    while (1) { // add PinInterrupt - minimize the number of communications
 
-        int check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1);
+        int check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1); //only keep masterSpi
+      //  int32_t rx_WakeUp = platform_read(masterSpi, LSM6DSOX_CTRL1_XL, &dummy_read_G, 1);
+     //   uint32_t pin_out_value = PIN_getOutputValue(PIN_Id Board_DIO12);
+        printf("value of activity detection flag is: %d\n", activity_detection);
+        printf("value of interrupt pin 1 is 0x%04X\n", PIN_getOutputValue(Board_DIO12));
 
         if(check_status == 1){
 
-            int check_G_aval = Data_update_check(masterSpi, LSM6DSOX_STATUS_REG, G_BIT);
+            int check_G_aval = Data_update_check(masterSpi, LSM6DSOX_STATUS_REG, G_BIT); //only keep masterSpi
 
             if(check_G_aval){
 
@@ -752,7 +771,7 @@ void *masterThread(void *arg0)
             //send_databuffer(test_buffer,sizeof(test_buffer));
             Voltage_Temp_read();
 
-            sleep(STANDBY_DURATION);
+            sleep(STANDBY_DURATION); //add seconds
 
             /* Read current output value for all pins */
             currentOutputVal =  PIN_getPortOutputValue(hPin);
