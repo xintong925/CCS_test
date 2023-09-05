@@ -90,7 +90,7 @@ uint8_t* Acceleration_raw_get(void *handle, uint16_t reg, uint16_t len);
 uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len);
 
 
-int Activity_Detection(void *handle, uint16_t reg, uint16_t len);
+int Activity_Detection(void *handle);
 
 int Voltage_Temp_read(void);
 int RF_transmission(uint8_t* XL_data_read, uint8_t* G_data_read);
@@ -493,7 +493,7 @@ uint8_t* Angular_Rate_raw_get(void *handle, uint16_t reg, uint16_t len) {
   *
   */
 
-int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
+int Activity_Detection(void *handle) {
 
     int32_t ret;
 
@@ -501,7 +501,7 @@ int Activity_Detection(void *handle, uint16_t reg, uint16_t len) {
 
     uint16_t dummy_act;
 
-    ret = platform_read(handle, reg, &dummy_act, len);
+    ret = platform_read(handle, LSM6DSOX_WAKE_UP_SRC, &dummy_act, 1);
 
     bool check_activity = ((ret&ACTIVITY_BIT) == ACTIVITY_BIT); // if true, there's change in activity status
 
@@ -553,9 +553,9 @@ int init_SPI_IMU(void) {
  //   GPIO_setCallback(Board_DIO12, activityDetectionFxn);
  //   GPIO_enableInt(Board_DIO12);  /* INT1 */
 
-    GPIO_setConfig(3, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
-    GPIO_setCallback(3, activityDetectionFxn);
-    GPIO_enableInt(3);  /* INT1 */
+    GPIO_setConfig(Board_DIO12, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
+    GPIO_setCallback(Board_DIO12, activityDetectionFxn);
+    GPIO_enableInt(Board_DIO12);  /* INT1 */
 
     GPIO_setConfig(Board_DIO15, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_RISING);
     GPIO_enableInt(Board_DIO15);  /* INT2 */
@@ -748,17 +748,19 @@ void *masterThread(void *arg0)
 
     while (1) { // add PinInterrupt - minimize the number of communications
 
-        int check_status = Activity_Detection(masterSpi, LSM6DSOX_WAKE_UP_SRC, 1); //only keep masterSpi
+        int check_status = Activity_Detection(masterSpi); //only keep masterSpi
       //  int32_t rx_WakeUp = platform_read(masterSpi, LSM6DSOX_CTRL1_XL, &dummy_read_G, 1);
      //   uint32_t pin_out_value = PIN_getOutputValue(PIN_Id Board_DIO12);
         printf("value of activity detection flag is: %d\n", activity_detection);
-        printf("value of interrupt pin 1 is 0x%04X\n", PIN_getOutputValue(Board_DIO12));
+        printf("value of interrupt pin 1 is 0x%04X\n", PIN_getOutputValue(12));
 
         if(check_status == 1){
 
             int check_G_aval = Data_update_check(masterSpi, LSM6DSOX_STATUS_REG, G_BIT); //only keep masterSpi
+            printf("value of activity detection flag is: %d\n", activity_detection);
 
             if(check_G_aval){
+                printf("value of activity detection flag is: %d\n", activity_detection);
 
                 uint8_t* XL_data = Acceleration_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
                 uint8_t* G_data = Angular_Rate_raw_get(masterSpi, LSM6DSOX_STATUS_REG, 1);
